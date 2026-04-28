@@ -1,245 +1,268 @@
-
-"""
-Masterarbeit — Datenerhebung mit YOLOv11 Hand-Keypoints
-=====================================================
-- 21 Hand-Keypoints
-- Kurze Aufnahmen (30 Frames)
-- Eine Aufnahme = genau eine Session + eine Geste
-- Session & Klasse während REC gesperrt
-- REC nur möglich, wenn Hand erkannt ist
-
-Steuerung:
-LEERTASTE = Aufnahme starten
-N          = Nächste Geste
-B          = Vorherige Geste
-Q          = Beenden
-"""
-
 import cv2
-import pandas as pd
+import csv
 import os
-from datetime import datetime
+import time
+import numpy as np
 from ultralytics import YOLO
 
-# ──────────────────────────────────────────────────
+# ============================================================
 # KONFIGURATION
-# ──────────────────────────────────────────────────
+# ============================================================
+MODEL_PATH           = "yolo/best.pt"
+CSV_PATH             = "datensatz.csv"
+AUFNAHMEN_PRO_KLASSE = 30
+CONF_THRESHOLD       = 0.5
 
-MODEL_PATH = r"C:\Users\Latitude 5510\Desktop\Masterarbeit\yolo\best.pt"
-FRAMES_PRO_AUFNAHME = 30
-CONF_SCHWELLE = 0.3
-SPEICHERORT = "handtracking_thesis/data/raw"
-
-# ✅ GEÄNDERTE KLASSEN-REIHENFOLGE
+# ============================================================
+# BEWEGUNGSKLASSEN
+# ============================================================
 KLASSEN = {
-    0: "hand_offen",
-    1: "faust",
-    2: "daumen_hoch",
-    3: "zeigefinger",
-    4: "kreisbewegung",
-    5: "winken",
+    "0": "hand_offen",
+    "1": "faust",
+    "2": "daumen_hoch",
+    "3": "zeigefinger",
+    "4": "winken",
+    "5": "kreisbewegung"
 }
 
+# ============================================================
+# SESSIONS — 15 Variationen
+# Format: (Name, licht, abstand, hand)
+# ============================================================
 SESSIONS = {
-    "1":  {"name": "Basis", "bedingung": "Normales Licht, frontal, Abstand 40–60cm"},
-    "2":  {"name": "Helles_Licht", "bedingung": "Starke Lampe direkt auf Hand"},
-    "3":  {"name": "Schwaches_Licht", "bedingung": "Gedimmtes Licht / Abend"},
-    "4":  {"name": "Seitl_Licht", "bedingung": "Licht von links oder rechts"},
-    "5":  {"name": "Nah", "bedingung": "Abstand 20–30 cm"},
-    "6":  {"name": "Weit", "bedingung": "Abstand 70–100 cm"},
-    "7":  {"name": "Schraeg_links", "bedingung": "Hand ca. 45° links"},
-    "8":  {"name": "Schraeg_rechts", "bedingung": "Hand ca. 45° rechts"},
-    "9":  {"name": "Heller_HG", "bedingung": "Weißer Hintergrund"},
-    "10": {"name": "Dunkler_HG", "bedingung": "Dunkler Hintergrund"},
-    "11": {"name": "Proband", "bedingung": "Andere Person"},
-    "12": {"name": "Linke_Hand", "bedingung": "Linke Hand"},
-    "13": {"name": "Langsam", "bedingung": "Langsam (nur Kreis & Winken)"},
-    "14": {"name": "Normal", "bedingung": "Normales Tempo"},
-    "15": {"name": "Schnell", "bedingung": "Schnell (nur Kreis & Winken)"},
+    "1":  ("Basis",                 "normales_licht",  "40-60cm",  "rechts"),
+    "2":  ("Licht: Hell",           "helles_licht",    "40-60cm",  "rechts"),
+    "3":  ("Licht: Schwach",        "schwaches_licht", "40-60cm",  "rechts"),
+    "4":  ("Licht: Seitlich",       "seitlich",        "40-60cm",  "rechts"),
+    "5":  ("Abstand: Nah",          "normales_licht",  "20-30cm",  "rechts"),
+    "6":  ("Abstand: Weit",         "normales_licht",  "70-100cm", "rechts"),
+    "7":  ("Rotation: Handflaeche", "normales_licht",  "40-60cm",  "rechts"),
+    "8":  ("Rotation: Handruecken", "normales_licht",  "40-60cm",  "rechts"),
+    "9":  ("Rotation: Seitlich",    "normales_licht",  "40-60cm",  "rechts"),
+    "10": ("Hintergrund: Hell",     "normales_licht",  "40-60cm",  "rechts"),
+    "11": ("Hintergrund: Dunkel",   "normales_licht",  "40-60cm",  "rechts"),
+    "12": ("Linke Hand",            "normales_licht",  "40-60cm",  "links"),
+    "13": ("Tempo: Langsam",        "normales_licht",  "40-60cm",  "rechts"),
+    "14": ("Tempo: Schnell",        "normales_licht",  "40-60cm",  "rechts"),
+    "15": ("Proband extra",         "normales_licht",  "40-60cm",  "rechts"),
 }
 
-# ──────────────────────────────────────────────────
-# HILFSFUNKTIONEN
-# ──────────────────────────────────────────────────
+# Sessions die Probanden MUSS machen
+PROBANDEN_SESSIONS = {"1","2","3","5","6","7","8","10","11"}
 
-def spalten_namen():
-    cols = []
+# ============================================================
+# CSV HEADER
+# ============================================================
+def erstelle_csv_header():
+    header = ["proband", "session_id", "session_name", "licht", "abstand", "hand",
+              "klasse", "zeitstempel"]
     for i in range(21):
-        cols.extend([f"kp{i}_x", f"kp{i}_y", f"kp{i}_conf"])
-    return cols
+        header += [f"kp{i}_x", f"kp{i}_y", f"kp{i}_conf"]
+    header += [
+        "distanz_daumen_zeigefinger",
+        "distanz_daumen_mittelfinger",
+        "distanz_daumen_kleinfinger",
+        "winkel_zeigefinger",
+        "winkel_mittelfinger",
+        "winkel_ringfinger",
+        "winkel_kleinfinger",
+        "geschwindigkeit_daumen",
+        "geschwindigkeit_zeigefinger",
+        "handgroesse"
+    ]
+    return header
 
-SPALTEN = spalten_namen() + [
-    "klasse", "klasse_id", "session_id", "session_name",
-    "aufnahme_id", "frame", "zeitstempel"
-]
+# ============================================================
+# FEATURE BERECHNUNG
+# ============================================================
+def berechne_distanz(p1, p2):
+    return np.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
 
-def session_csv(session_id, name):
-    return f"{SPEICHERORT}/session_{int(session_id):02d}_{name}.csv"
+def berechne_winkel(p1, p2, p3):
+    v1 = np.array([p1[0]-p2[0], p1[1]-p2[1]])
+    v2 = np.array([p3[0]-p2[0], p3[1]-p2[1]])
+    cos_a = np.dot(v1,v2) / (np.linalg.norm(v1)*np.linalg.norm(v2)+1e-6)
+    return np.degrees(np.arccos(np.clip(cos_a,-1.0,1.0)))
 
-def extrahiere_keypoints(result):
-    if result is None or result.keypoints is None:
-        return None
-    if len(result.keypoints.data) == 0:
-        return None
-    kp = result.keypoints.data[0].cpu().numpy()
-    if kp.shape[0] < 21:
-        return None
-    return kp.flatten().tolist()
+def berechne_features(kp, prev=None):
+    handgroesse = berechne_distanz(kp[0], kp[12]) + 1e-6
+    d_dz  = berechne_distanz(kp[4], kp[8])  / handgroesse
+    d_dm  = berechne_distanz(kp[4], kp[12]) / handgroesse
+    d_dk  = berechne_distanz(kp[4], kp[20]) / handgroesse
+    w_z   = berechne_winkel(kp[5],  kp[6],  kp[8])
+    w_m   = berechne_winkel(kp[9],  kp[10], kp[12])
+    w_r   = berechne_winkel(kp[13], kp[14], kp[16])
+    w_k   = berechne_winkel(kp[17], kp[18], kp[20])
+    v_d   = berechne_distanz(kp[4], prev[4]) / handgroesse if prev is not None else 0.0
+    v_z   = berechne_distanz(kp[8], prev[8]) / handgroesse if prev is not None else 0.0
+    return [round(d_dz,4), round(d_dm,4), round(d_dk,4),
+            round(w_z,2),  round(w_m,2),  round(w_r,2), round(w_k,2),
+            round(v_d,4),  round(v_z,4),  round(handgroesse,2)]
 
-def zeichne_hand(frame, result, recording):
-    if result is None or result.keypoints is None:
-        return frame
-    if len(result.keypoints.xy) == 0:
-        return frame
-
-    pts  = result.keypoints.xy[0]
-    conf = result.keypoints.conf[0]
-
-    radius = 6 if recording else 3
-    color  = (0, 0, 255) if recording else (0, 255, 0)
-
-    for (x, y), c in zip(pts, conf):
-        if c >= CONF_SCHWELLE:
-            cv2.circle(frame, (int(x), int(y)), radius, color, -1)
-
-    return frame
-
-def session_auswahl():
-    os.makedirs(SPEICHERORT, exist_ok=True)
-    print("\nVerfügbare Sessions:")
-    for k, v in SESSIONS.items():
-        print(f"[{k}] {v['name']} – {v['bedingung']}")
-    while True:
-        s = input("Session wählen: ").strip()
-        if s in SESSIONS:
-            return s, SESSIONS[s]
-
-# ──────────────────────────────────────────────────
+# ============================================================
 # HAUPTPROGRAMM
-# ──────────────────────────────────────────────────
-
+# ============================================================
 def main():
+    print("\n" + "="*55)
+    print("  DATENERHEBUNG — Handbewegungserkennung")
+    print("="*55)
+
+    # Proband eingeben
+    proband = input("\nProband-Name (z.B. P1 / P2 / P3): ").strip()
+    if not proband:
+        proband = "unbekannt"
+
+    # Sessions anzeigen — je nach Proband gefiltert
+    ist_hauptperson = proband.lower() in ["du", "ich", "main"]
+    print(f"\nVerfuegbare Sessions fuer '{proband}':")
+    print(f"{'Nr.':<5} {'Name':<25} {'Licht':<18} {'Abstand':<12} {'Hand'}")
+    print("-"*75)
+    for sid, (name, licht, abstand, hand) in SESSIONS.items():
+        if not ist_hauptperson and sid not in PROBANDEN_SESSIONS:
+            continue
+        marker = "  " if ist_hauptperson or sid in PROBANDEN_SESSIONS else ""
+        print(f"[{sid:>2}]  {name:<25} {licht:<18} {abstand:<12} {hand}")
+
+    session_id = input("\nSession-Nummer eingeben: ").strip()
+    if session_id not in SESSIONS:
+        print("Ungueltige Session!")
+        return
+    if not ist_hauptperson and session_id not in PROBANDEN_SESSIONS:
+        print(f"Session {session_id} ist nicht fuer Probanden vorgesehen!")
+        return
+
+    session_name, licht, abstand, hand = SESSIONS[session_id]
+    print(f"\nGewaehlt: Session {session_id} — {session_name}")
+    print(f"Licht: {licht} | Abstand: {abstand} | Hand: {hand}")
+    input("\nDruecke ENTER wenn du bereit bist...")
+
+    # YOLO laden
+    print("\nLade YOLO-Modell...")
     model = YOLO(MODEL_PATH)
 
-    session_id, session_info = session_auswahl()
-    session_name = session_info["name"]
+    # CSV vorbereiten
+    datei_existiert = os.path.exists(CSV_PATH)
+    csv_file = open(CSV_PATH, "a", newline="", encoding="utf-8")
+    writer = csv.writer(csv_file)
+    if not datei_existiert:
+        writer.writerow(erstelle_csv_header())
+        print(f"Neue CSV erstellt: {CSV_PATH}")
+    else:
+        print(f"Daten werden hinzugefuegt: {CSV_PATH}")
 
-    pfad = session_csv(session_id, session_name)
-    df = pd.read_csv(pfad) if os.path.exists(pfad) else pd.DataFrame(columns=SPALTEN)
-    aufnahme_id = 0 if len(df) == 0 else int(df["aufnahme_id"].max()) + 1
-
+    # Webcam
     cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    print(f"Webcam FPS: {fps}")
 
-    klasse_idx = 0
-    recording = False
-    buffer = []
+    klassen_liste  = list(KLASSEN.keys())
+    klassen_index  = 0
+    aktuelle_klasse = klassen_liste[0]
+    prev_keypoints  = None
+    aufnahme_laeuft = False
+    aufnahmen_count = 0
+
+    print("\nSTEUERUNG:")
+    print("  LEERTASTE = Aufnahme starten/stoppen")
+    print("  N         = Naechste Geste")
+    print("  B         = Vorherige Geste")
+    print("  Q         = Beenden\n")
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        frame = cv2.flip(frame, 1)
+        results = model.predict(source=frame, conf=CONF_THRESHOLD,
+                                verbose=False, save=False)
+        hand_erkannt  = False
+        keypoints_xy  = None
+        keypoints_conf = None
 
-        klasse_name = KLASSEN[klasse_idx]
-        next_klasse = KLASSEN[(klasse_idx + 1) % len(KLASSEN)]
+        if results and results[0].keypoints and results[0].keypoints.shape[1] > 0:
+            kp_data        = results[0].keypoints
+            keypoints_xy   = kp_data.xy[0].cpu().numpy()
+            keypoints_conf = kp_data.conf[0].cpu().numpy()
 
-        result = model(frame, verbose=False)[0]
-        kp = extrahiere_keypoints(result)
-        hand_ok = kp is not None
+            if len(keypoints_xy) == 21:
+                hand_erkannt = True
+                for i, (x, y) in enumerate(keypoints_xy):
+                    cv2.circle(frame, (int(x), int(y)), 4, (0, 255, 0), -1)
 
-        frame = zeichne_hand(frame, result, recording)
+                if aufnahme_laeuft and aufnahmen_count < AUFNAHMEN_PRO_KLASSE:
+                    features = berechne_features(keypoints_xy, prev_keypoints)
+                    zeile = [proband, session_id, session_name, licht, abstand, hand,
+                             aktuelle_klasse, round(time.time(), 3)]
+                    for i in range(21):
+                        zeile += [round(float(keypoints_xy[i][0]),2),
+                                  round(float(keypoints_xy[i][1]),2),
+                                  round(float(keypoints_conf[i]),3)]
+                    zeile += features
+                    writer.writerow(zeile)
+                    aufnahmen_count += 1
 
-        # ── Aufnahme ───────────────────────────────
-        if recording:
-            if not hand_ok:
-                buffer = []
-                recording = False
-                print("[ABBRUCH] Hand verloren")
-            else:
-                row = dict(zip(spalten_namen(), kp))
-                row.update({
-                    "klasse": klasse_name,
-                    "klasse_id": klasse_idx,
-                    "session_id": session_id,
-                    "session_name": session_name,
-                    "aufnahme_id": aufnahme_id,
-                    "frame": len(buffer),
-                    "zeitstempel": datetime.now().isoformat(),
-                })
-                buffer.append(row)
+                prev_keypoints = keypoints_xy.copy()
 
-                if len(buffer) >= FRAMES_PRO_AUFNAHME:
-                    df = pd.concat([df, pd.DataFrame(buffer)], ignore_index=True)
-                    df.to_csv(pfad, index=False)
-                    buffer = []
-                    recording = False
-                    aufnahme_id += 1
-                    print(f"[OK] Aufnahme gespeichert – {klasse_name}")
-
-        # ── Session-Anzeige ────────────────────────
-        overlay = frame.copy()
+        # ---- UI ----
         h, w = frame.shape[:2]
-        cv2.rectangle(overlay, (0, 0), (w, 55), (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+        klasse_text  = KLASSEN[aktuelle_klasse]
+        status_farbe = (0, 220, 0) if aufnahme_laeuft else (0, 0, 220)
+        status_text  = "REC" if aufnahme_laeuft else "STOP"
 
-        cv2.putText(frame,
-                    f"SESSION: {session_name.upper()}",
-                    (w // 2 - 220, 38),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.0,
-                    (255, 255, 255),
-                    2)
+        cv2.putText(frame, f"{klasse_text}  [{status_text}]",
+                    (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, status_farbe, 2)
+        cv2.putText(frame, f"{proband} | S{session_id}: {session_name}",
+                    (10, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1)
+        cv2.putText(frame, f"{aufnahmen_count}/{AUFNAHMEN_PRO_KLASSE}",
+                    (w-130, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 200, 0), 2)
 
-        # ── Status ─────────────────────────────────
-        if recording:
-            status_text = "REC"
-            status_color = (0, 0, 255)
-        elif hand_ok:
-            status_text = "Hand erkannt"
-            status_color = (0, 220, 0)
-        else:
-            status_text = "Keine Hand erkannt"
-            status_color = (0, 140, 255)
+        if aufnahmen_count > 0:
+            prog = int((aufnahmen_count / AUFNAHMEN_PRO_KLASSE) * w)
+            cv2.rectangle(frame, (0, 48), (w, 55), (50, 50, 50), -1)
+            cv2.rectangle(frame, (0, 48), (prog, 55), (0, 200, 0), -1)
 
-        cv2.putText(frame, status_text, (20, 95),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, status_color, 2)
+        hand_text  = "Hand erkannt" if hand_erkannt else "Keine Hand"
+        hand_farbe = (0, 220, 0) if hand_erkannt else (0, 0, 220)
+        cv2.putText(frame, hand_text,
+                    (8, h-22), cv2.FONT_HERSHEY_SIMPLEX, 0.38, hand_farbe, 1)
+        cv2.putText(frame, "LEERTASTE=Start/Stop   N=Naechste   B=Vorherige   Q=Beenden",
+                    (8, h-8), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 160), 1)
 
-        # ── Klassenanzeige ─────────────────────────
-        cv2.putText(frame, f"GESTE: {klasse_name.upper()}",
-                    (20, 140),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        if aufnahmen_count >= AUFNAHMEN_PRO_KLASSE and aufnahme_laeuft:
+            aufnahme_laeuft = False
+            print(f"Fertig! {AUFNAHMEN_PRO_KLASSE} Samples fuer '{klasse_text}' gesammelt!")
 
-        if not recording:
-            cv2.putText(frame, f"NAECHSTE: {next_klasse}",
-                        (20, 175),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (180, 180, 180), 2)
+        cv2.imshow("Datenerhebung", frame)
+        taste = cv2.waitKey(1) & 0xFF
 
-        cv2.imshow("Hand Datenerhebung", frame)
-
-        key = cv2.waitKey(1) & 0xFF
-
-        if key == ord('q'):
+        if taste == ord('q'):
             break
-
-        elif key == ord(' ') and not recording:
-            if hand_ok:
-                recording = True
-                buffer = []
-                print(f"[REC] {klasse_name}")
+        elif taste == ord(' '):
+            aufnahme_laeuft = not aufnahme_laeuft
+            if aufnahme_laeuft:
+                aufnahmen_count = 0
+                print(f"Aufnahme gestartet: {klasse_text}")
             else:
-                print("[WARNUNG] Keine Hand erkannt – REC gesperrt")
-
-        elif key == ord('n') and not recording:
-            klasse_idx = (klasse_idx + 1) % len(KLASSEN)
-
-        elif key == ord('b') and not recording:
-            klasse_idx = (klasse_idx - 1) % len(KLASSEN)
+                print(f"Gestoppt. {aufnahmen_count} Samples gespeichert.")
+        elif taste == ord('n'):
+            klassen_index   = (klassen_index + 1) % len(klassen_liste)
+            aktuelle_klasse = klassen_liste[klassen_index]
+            aufnahme_laeuft = False
+            aufnahmen_count = 0
+            print(f"Naechste Geste: {KLASSEN[aktuelle_klasse]}")
+        elif taste == ord('b'):
+            klassen_index   = (klassen_index - 1) % len(klassen_liste)
+            aktuelle_klasse = klassen_liste[klassen_index]
+            aufnahme_laeuft = False
+            aufnahmen_count = 0
+            print(f"Vorherige Geste: {KLASSEN[aktuelle_klasse]}")
 
     cap.release()
+    csv_file.close()
     cv2.destroyAllWindows()
+    print(f"\nFertig! Daten gespeichert in: {CSV_PATH}")
 
 if __name__ == "__main__":
     main()

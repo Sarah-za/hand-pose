@@ -25,7 +25,7 @@ from ultralytics import YOLO
 #  KONFIGURATION — hier anpassen
 # ══════════════════════════════════════════════════════════════════
 
-MODEL_PATH = r"C:\Users\Latitude 5510\Desktop\Masterarbeit\yolo\best.pt"         # <- dein Modell hier eintragen (best.pt oder last.pt)
+MODEL_PATH = r"/home/n1825150/Masterarbeit/hand-pose/yolo/best.pt"         # <- dein Modell hier eintragen (best.pt oder last.pt)
 FRAMES_PRO_AUFNAHME = 30         # 30 Frames = ~1 Sekunde pro Aufnahme
 ZIEL_AUFNAHMEN = 30              # Ziel pro Klasse pro Session
 SPEICHERORT = "handtracking_thesis/data/raw"
