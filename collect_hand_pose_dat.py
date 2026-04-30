@@ -236,6 +236,8 @@ def main():
 
         cv2.imshow("Datenerhebung", frame)
         taste = cv2.waitKey(1) & 0xFF
+        cv2.namedWindow("Datenerhebung", cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty("Datenerhebung", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
         if taste == ord('q'):
             break
