@@ -1,0 +1,5 @@
+Modell,Accuracy (%),F1-Score (%),CV-Score (%),CV-Std (%),Trainingszeit (s),Inferenzzeit (ms)
+Random Forest,14.17,13.95,16.75,2.57,0.275,0.1885
+SVM,17.08,16.98,16.92,1.59,0.095,0.0998
+KNN,11.67,11.61,16.0,2.13,0.001,0.8407
+Neuronales Netz,16.67,14.91,16.67,0.0,3.869,0.8804
