@@ -9,7 +9,7 @@ from ultralytics import YOLO
 # KONFIGURATION
 # ============================================================
 MODEL_PATH           = "yolo/best.pt"
-CSV_PATH             = "datensatz.csv"
+#CSV_PATH             = "datensatz.csv"
 AUFNAHMEN_PRO_KLASSE = 100
 CONF_THRESHOLD       = 0.5
 
@@ -17,12 +17,12 @@ CONF_THRESHOLD       = 0.5
 # BEWEGUNGSKLASSEN
 # ============================================================
 KLASSEN = {
-    "0": "hand_offen",
-    "1": "faust",
-    "2": "daumen_hoch",
-    "3": "zeigefinger",
-    "4": "winken",
-    "5": "kreisbewegung"
+    "0": {"name": "hand_offen",    "frames": 50},
+    "1": {"name": "faust",         "frames": 50},
+    "2": {"name": "daumen_hoch",   "frames": 50},
+    "3": {"name": "zeigefinger",   "frames": 50},
+    "4": {"name": "winken",        "frames": 100},
+    "5": {"name": "kreisbewegung", "frames": 100},
 }
 
 # ============================================================
@@ -113,13 +113,17 @@ def main():
         print(f"[{sid:>2}]  {name:<25} {licht:<18} {abstand:<12} {hand}")
 
     print(f"\nHinweis: Alle Probanden machen alle 11 Sessions.")
-    print(f"         100 Aufnahmen pro Klasse × 6 Klassen = 600 Aufnahmen pro Session.")
+    statisch  = sum(1 for k in KLASSEN.values() if k["frames"] == 50)  * 50
+    dynamisch = sum(1 for k in KLASSEN.values() if k["frames"] == 100) * 100
+    gesamt    = statisch + dynamisch
+    print(f"         {statisch} (statisch) + {dynamisch} (dynamisch) = {gesamt} Aufnahmen pro Session.")
 
     session_id = input("\nSession-Nummer eingeben: ").strip()
     if session_id not in SESSIONS:
         print("Ungueltige Session!")
         return
-
+    os.makedirs("datensatz", exist_ok=True)
+    CSV_PATH = f"datensatz/daten_{proband}_Session{session_id}.csv"
     session_name, licht, abstand, hand = SESSIONS[session_id]
     print(f"\nGewaehlt: Session {session_id} — {session_name}")
     print(f"Licht: {licht} | Abstand: {abstand} | Hand: {hand}")
@@ -181,8 +185,7 @@ def main():
                 hand_erkannt = True
                 for i, (x, y) in enumerate(keypoints_xy):
                     cv2.circle(frame, (int(x), int(y)), 4, (0, 255, 0), -1)
-
-                if aufnahme_laeuft and aufnahmen_count < AUFNAHMEN_PRO_KLASSE:
+                if aufnahme_laeuft and aufnahmen_count < KLASSEN[aktuelle_klasse]["frames"]:
                     features = berechne_features(keypoints_xy, prev_keypoints)
                     zeile = [proband, session_id, session_name, licht, abstand, hand,
                              aktuelle_klasse, round(time.time(), 3)]
@@ -204,7 +207,7 @@ def main():
 
         # ---- UI ----
         h, w = frame.shape[:2]
-        klasse_text  = KLASSEN[aktuelle_klasse]
+        klasse_text  = KLASSEN[aktuelle_klasse]["name"]
         status_farbe = (0, 220, 0) if aufnahme_laeuft else (0, 0, 220)
         status_text  = "REC" if aufnahme_laeuft else "STOP"
 
@@ -212,11 +215,11 @@ def main():
                     (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, status_farbe, 2)
         cv2.putText(frame, f"{proband} | S{session_id}: {session_name}",
                     (10, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 200, 200), 1)
-        cv2.putText(frame, f"{aufnahmen_count}/{AUFNAHMEN_PRO_KLASSE}",
-                    (w-130, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 200, 0), 2)
+        cv2.putText(frame, f"{aufnahmen_count}/{KLASSEN[aktuelle_klasse]["frames"]}",
+            (w-130, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 200, 0), 2)
 
         if aufnahmen_count > 0:
-            prog = int((aufnahmen_count / AUFNAHMEN_PRO_KLASSE) * w)
+            prog = int((aufnahmen_count / KLASSEN[aktuelle_klasse]["frames"]) * w)
             cv2.rectangle(frame, (0, 48), (w, 55), (50, 50, 50), -1)
             cv2.rectangle(frame, (0, 48), (prog, 55), (0, 200, 0), -1)
 
@@ -227,9 +230,9 @@ def main():
         cv2.putText(frame, "LEERTASTE=Start/Stop   N=Naechste   B=Vorherige   Q=Beenden",
                     (8, h-8), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 160), 1)
 
-        if aufnahmen_count >= AUFNAHMEN_PRO_KLASSE and aufnahme_laeuft:
+        if aufnahmen_count >= KLASSEN[aktuelle_klasse]["frames"] and aufnahme_laeuft:
             aufnahme_laeuft = False
-            print(f"Fertig! {AUFNAHMEN_PRO_KLASSE} Samples fuer '{klasse_text}' gesammelt!")
+            print(f"Fertig! {KLASSEN[aktuelle_klasse]["frames"]} Samples fuer '{klasse_text}' gesammelt!")
             if uebersprungen > 0:
                 print(f"         ({uebersprungen} kaputte Zeilen uebersprungen)")
             uebersprungen = 0

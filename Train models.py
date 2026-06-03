@@ -5,12 +5,13 @@
 Masterarbeit: Vergleich verschiedener ML-Methoden
 zur Erkennung von Hand- und Fingerbewegungen
 
-Voraussetzungen (installieren):
-  pip install scikit-learn pandas numpy matplotlib seaborn tensorflow
+Voraussetzungen:
+  pip install scikit-learn pandas numpy matplotlib seaborn
+  (PyTorch bereits installiert!)
 
 CSV Format erwartet:
-  x0,y0,x1,y1,...,x20,y20,label
-  (21 Keypoints = 42 Spalten + 1 Label-Spalte)
+  proband, session_id, session_name, licht, abstand, hand,
+  klasse, zeitstempel, kp0_x, kp0_y, kp0_conf, ..., features
 ==============================================
 """
 
@@ -23,49 +24,64 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classification_report
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+
+# ──────────────────────────────────────────────
+# 0. GPU PRÜFEN
+# ──────────────────────────────────────────────
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("=" * 50)
+print("  Hand Gesture Recognition - Training")
+print("=" * 50)
+print(f"\n🖥️  Gerät: {device}")
+if device.type == "cuda":
+    print(f"✅ GPU erkannt: {torch.cuda.get_device_name(0)}")
+    print(f"✅ VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+else:
+    print("⚠️  Keine GPU → Training läuft auf CPU")
 
 # ──────────────────────────────────────────────
 # 1. DATEN LADEN
 # ──────────────────────────────────────────────
 
-CSV_PATH = r"C:\Users\Latitude 5510\Desktop\Masterarbeit\hand-pose\datensatz.csv"   # <-- Hier CSV-Pfad eintragen
-
-print("=" * 50)
-print("  Handgesten erkennen- Training")
-print("=" * 50)
+CSV_PATH = "datensatz.csv"   # <-- Hier deinen CSV-Pfad eintragen
 
 # Prüfen ob CSV existiert, sonst Demo-Daten erstellen
 if not os.path.exists(CSV_PATH):
     print(f"\n⚠️  '{CSV_PATH}' nicht gefunden.")
     print("→ Erstelle Demo-Datensatz zum Testen...\n")
 
-    # Demo-Daten: 6 Klassen, 200 Samples pro Klasse
-    classes = ["faust", "hand_offen", "daumen_hoch", "zeigefinger", "winken", "kreisbewegung"]
+    classes = ["hand_offen", "faust", "daumen_hoch", "zeigefinger", "winken", "kreisbewegung"]
     rows = []
     for label in classes:
         for _ in range(200):
-            keypoints = np.random.rand(42).tolist()  # 21 x/y Koordinaten
+            keypoints = np.random.rand(42).tolist()
             rows.append(keypoints + [label])
 
-    cols = [f"{axis}{i}" for i in range(21) for axis in ["x", "y"]] + ["label"]
+    cols = [f"{axis}{i}" for i in range(21) for axis in ["x", "y"]] + ["klasse"]
     df = pd.DataFrame(rows, columns=cols)
     df.to_csv(CSV_PATH, index=False)
     print(f"✅ Demo-CSV erstellt: {CSV_PATH}")
 else:
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(CSV_PATH, on_bad_lines="skip")
     print(f"\n✅ Datensatz geladen: {CSV_PATH}")
 
 print(f"\n📊 Datensatz-Info:")
 print(f"   Zeilen (Samples): {len(df)}")
 print(f"   Spalten:          {len(df.columns)}")
 print(f"\n🏷️  Klassen-Verteilung:")
-print(df["label"].value_counts().to_string())
+print(df["klasse"].value_counts().to_string())
 
 # ──────────────────────────────────────────────
 # 2. DATEN VORBEREITEN
@@ -75,21 +91,26 @@ print("\n" + "─" * 50)
 print("  Daten vorbereiten...")
 print("─" * 50)
 
-# Features (X) und Labels (y) trennen
-X = df.drop(columns=["label"]).values
-y = df["label"].values
+# Nur Keypoint x/y Spalten + berechnete Features als Input
+IGNORIEREN = ["proband", "session_id", "session_name", "licht",
+              "abstand", "hand", "zeitstempel", "klasse"]
+feature_cols = [c for c in df.columns if c not in IGNORIEREN]
 
-# Labels zu Zahlen umwandeln
+X = df[feature_cols].values
+y = df["klasse"].values
+
+# Labels zu Zahlen
 le = LabelEncoder()
 y_encoded = le.fit_transform(y)
 class_names = le.classes_
-print(f"\n✅ Klassen erkannt: {list(class_names)}")
+print(f"\n✅ Klassen: {list(class_names)}")
+print(f"✅ Features: {len(feature_cols)} Spalten")
 
-# Normalisierung (wichtig für SVM und KNN)
+# Normalisierung
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
-# Train / Test Split (80% / 20%)
+# Train / Test Split 80/20
 X_train, X_test, y_train, y_test = train_test_split(
     X_scaled, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
 )
@@ -97,7 +118,7 @@ print(f"\n📂 Train-Samples: {len(X_train)}")
 print(f"📂 Test-Samples:  {len(X_test)}")
 
 # ──────────────────────────────────────────────
-# 3. MODELLE DEFINIEREN
+# 3. SKLEARN MODELLE (RF, SVM, KNN)
 # ──────────────────────────────────────────────
 
 models = {
@@ -105,10 +126,6 @@ models = {
     "SVM":           SVC(kernel="rbf", C=10, gamma="scale", random_state=42),
     "KNN":           KNeighborsClassifier(n_neighbors=5, metric="euclidean"),
 }
-
-# ──────────────────────────────────────────────
-# 4. TRAINING & EVALUATION
-# ──────────────────────────────────────────────
 
 results = {}
 
@@ -119,31 +136,27 @@ print("=" * 50)
 for name, model in models.items():
     print(f"\n🔧 Trainiere: {name} ...")
 
-    # Training
     t_start = time.time()
     model.fit(X_train, y_train)
     train_time = time.time() - t_start
 
-    # Inference (Vorhersage auf Testdaten)
     t_start = time.time()
     y_pred = model.predict(X_test)
-    inference_time = (time.time() - t_start) / len(X_test) * 1000  # ms pro Sample
+    inference_time = (time.time() - t_start) / len(X_test) * 1000
 
-    # Metriken
     acc = accuracy_score(y_test, y_pred)
     f1  = f1_score(y_test, y_pred, average="weighted")
     cv_scores = cross_val_score(model, X_scaled, y_encoded, cv=5, scoring="accuracy")
-    cm = confusion_matrix(y_test, y_pred)
+    cm  = confusion_matrix(y_test, y_pred)
 
     results[name] = {
-        "accuracy":       round(acc * 100, 2),
-        "f1_score":       round(f1 * 100, 2),
-        "cv_mean":        round(cv_scores.mean() * 100, 2),
-        "cv_std":         round(cv_scores.std() * 100, 2),
-        "train_time_s":   round(train_time, 3),
-        "inference_ms":   round(inference_time, 4),
+        "accuracy":         round(acc * 100, 2),
+        "f1_score":         round(f1  * 100, 2),
+        "cv_mean":          round(cv_scores.mean() * 100, 2),
+        "cv_std":           round(cv_scores.std()  * 100, 2),
+        "train_time_s":     round(train_time, 3),
+        "inference_ms":     round(inference_time, 4),
         "confusion_matrix": cm,
-        "y_pred":         y_pred,
     }
 
     print(f"   ✅ Accuracy:        {acc*100:.2f}%")
@@ -153,112 +166,144 @@ for name, model in models.items():
     print(f"   ⚡ Inferenzzeit:    {inference_time:.4f} ms/Sample")
 
 # ──────────────────────────────────────────────
-# 5. NEURONALES NETZ (TensorFlow)
+# 4. NEURONALES NETZ (PyTorch + GPU)
 # ──────────────────────────────────────────────
 
-try:
-    import tensorflow as tf
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
-    from tensorflow.keras.utils import to_categorical
-    from tensorflow.keras.callbacks import EarlyStopping
+print(f"\n🔧 Trainiere: Neuronales Netz (PyTorch auf {device}) ...")
 
-    print(f"\n🔧 Trainiere: Neuronales Netz ...")
+n_features = X_train.shape[1]
+n_classes  = len(class_names)
 
-    n_classes = len(class_names)
-    y_train_cat = to_categorical(y_train, num_classes=n_classes)
-    y_test_cat  = to_categorical(y_test,  num_classes=n_classes)
+# Daten zu Tensoren konvertieren
+X_train_t = torch.FloatTensor(X_train).to(device)
+y_train_t = torch.LongTensor(y_train).to(device)
+X_test_t  = torch.FloatTensor(X_test).to(device)
 
-    nn_model = Sequential([
-        Dense(256, activation="relu", input_shape=(X_train.shape[1],)),
-        BatchNormalization(),
-        Dropout(0.3),
-        Dense(128, activation="relu"),
-        BatchNormalization(),
-        Dropout(0.2),
-        Dense(64, activation="relu"),
-        Dense(n_classes, activation="softmax"),
-    ])
+train_dataset = TensorDataset(X_train_t, y_train_t)
+train_loader  = DataLoader(train_dataset, batch_size=32, shuffle=True)
 
-    nn_model.compile(
-        optimizer="adam",
-        loss="categorical_crossentropy",
-        metrics=["accuracy"]
-    )
+# Modell definieren
+class HandGestureNN(nn.Module):
+    def __init__(self, n_features, n_classes):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(n_features, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, n_classes)
+        )
+    def forward(self, x):
+        return self.network(x)
 
-    early_stop = EarlyStopping(patience=10, restore_best_weights=True, verbose=0)
+nn_model  = HandGestureNN(n_features, n_classes).to(device)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(nn_model.parameters(), lr=0.001)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
 
-    t_start = time.time()
-    history = nn_model.fit(
-        X_train, y_train_cat,
-        epochs=100,
-        batch_size=32,
-        validation_split=0.1,
-        callbacks=[early_stop],
-        verbose=0
-    )
-    train_time = time.time() - t_start
+# Training
+t_start    = time.time()
+best_acc   = 0.0
+no_improve = 0
+patience   = 10
+EPOCHS     = 100
 
-    t_start = time.time()
-    y_pred_prob = nn_model.predict(X_test, verbose=0)
-    inference_time = (time.time() - t_start) / len(X_test) * 1000
-    y_pred_nn = np.argmax(y_pred_prob, axis=1)
+for epoch in range(EPOCHS):
+    nn_model.train()
+    for X_batch, y_batch in train_loader:
+        optimizer.zero_grad()
+        output = nn_model(X_batch)
+        loss   = criterion(output, y_batch)
+        loss.backward()
+        optimizer.step()
+    scheduler.step()
 
-    acc = accuracy_score(y_test, y_pred_nn)
-    f1  = f1_score(y_test, y_pred_nn, average="weighted")
-    cm  = confusion_matrix(y_test, y_pred_nn)
+    # Validation
+    nn_model.eval()
+    with torch.no_grad():
+        val_out  = nn_model(X_test_t)
+        val_pred = torch.argmax(val_out, dim=1).cpu().numpy()
+        val_acc  = accuracy_score(y_test, val_pred)
 
-    results["Neuronales Netz"] = {
-        "accuracy":       round(acc * 100, 2),
-        "f1_score":       round(f1 * 100, 2),
-        "cv_mean":        round(acc * 100, 2),
-        "cv_std":         0.0,
-        "train_time_s":   round(train_time, 3),
-        "inference_ms":   round(inference_time, 4),
-        "confusion_matrix": cm,
-        "y_pred":         y_pred_nn,
-        "history":        history,
-    }
+    if val_acc > best_acc:
+        best_acc   = val_acc
+        no_improve = 0
+        torch.save(nn_model.state_dict(), "best_nn_model.pt")
+    else:
+        no_improve += 1
 
-    print(f"   ✅ Accuracy:        {acc*100:.2f}%")
-    print(f"   ✅ F1-Score:        {f1*100:.2f}%")
-    print(f"   ⏱️  Trainingszeit:   {train_time:.3f}s")
-    print(f"   ⚡ Inferenzzeit:    {inference_time:.4f} ms/Sample")
+    if no_improve >= patience:
+        print(f"   Early stopping bei Epoch {epoch+1}")
+        break
 
-except ImportError:
-    print("\n⚠️  TensorFlow nicht installiert → Neuronales Netz wird übersprungen.")
-    print("   Installieren mit: pip install tensorflow")
+    if (epoch + 1) % 10 == 0:
+        print(f"   Epoch {epoch+1:>3}/{EPOCHS} | Val Accuracy: {val_acc*100:.2f}%")
+
+train_time = time.time() - t_start
+
+# Bestes Modell laden und evaluieren
+nn_model.load_state_dict(torch.load("best_nn_model.pt"))
+nn_model.eval()
+
+t_start = time.time()
+with torch.no_grad():
+    y_pred_nn = torch.argmax(nn_model(X_test_t), dim=1).cpu().numpy()
+inference_time = (time.time() - t_start) / len(X_test) * 1000
+
+acc = accuracy_score(y_test, y_pred_nn)
+f1  = f1_score(y_test, y_pred_nn, average="weighted")
+cm  = confusion_matrix(y_test, y_pred_nn)
+
+results["Neuronales Netz"] = {
+    "accuracy":         round(acc * 100, 2),
+    "f1_score":         round(f1  * 100, 2),
+    "cv_mean":          round(acc * 100, 2),
+    "cv_std":           0.0,
+    "train_time_s":     round(train_time, 3),
+    "inference_ms":     round(inference_time, 4),
+    "confusion_matrix": cm,
+}
+
+print(f"   ✅ Accuracy:        {acc*100:.2f}%")
+print(f"   ✅ F1-Score:        {f1*100:.2f}%")
+print(f"   ⏱️  Trainingszeit:   {train_time:.3f}s")
+print(f"   ⚡ Inferenzzeit:    {inference_time:.4f} ms/Sample")
 
 # ──────────────────────────────────────────────
-# 6. ERGEBNIS-TABELLE
+# 5. ERGEBNIS-TABELLE
 # ──────────────────────────────────────────────
 
-print("\n" + "=" * 60)
+print("\n" + "=" * 70)
 print("  ERGEBNIS-VERGLEICH")
-print("=" * 60)
-print(f"{'Modell':<20} {'Accuracy':>10} {'F1-Score':>10} {'CV-Score':>12} {'Train(s)':>10} {'Inf(ms)':>10}")
-print("─" * 75)
+print("=" * 70)
+print(f"{'Modell':<20} {'Accuracy':>10} {'F1-Score':>10} {'CV-Score':>14} {'Train(s)':>10} {'Inf(ms)':>10}")
+print("─" * 78)
 for name, r in results.items():
     cv_str = f"{r['cv_mean']}±{r['cv_std']}"
-    print(f"{name:<20} {r['accuracy']:>9}% {r['f1_score']:>9}% {cv_str:>12} {r['train_time_s']:>10} {r['inference_ms']:>10}")
+    print(f"{name:<20} {r['accuracy']:>9}% {r['f1_score']:>9}% {cv_str:>14} {r['train_time_s']:>10} {r['inference_ms']:>10}")
 
-# Bestes Modell
 best = max(results, key=lambda k: results[k]["accuracy"])
 print(f"\n🏆 Bestes Modell: {best} ({results[best]['accuracy']}% Accuracy)")
 
 # ──────────────────────────────────────────────
-# 7. VISUALISIERUNGEN
+# 6. VISUALISIERUNGEN
 # ──────────────────────────────────────────────
 
 output_dir = "ml_results"
 os.makedirs(output_dir, exist_ok=True)
 
-# Plot 1: Accuracy & F1 Vergleich
+# Plot 1: Accuracy & F1
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-names   = list(results.keys())
-accs    = [results[n]["accuracy"] for n in names]
-f1s     = [results[n]["f1_score"] for n in names]
-colors  = ["#2196F3", "#4CAF50", "#FF9800", "#E91E63"][:len(names)]
+names  = list(results.keys())
+accs   = [results[n]["accuracy"] for n in names]
+f1s    = [results[n]["f1_score"] for n in names]
+colors = ["#2196F3", "#4CAF50", "#FF9800", "#E91E63"][:len(names)]
 
 axes[0].bar(names, accs, color=colors, edgecolor="white", linewidth=1.2)
 axes[0].set_title("Accuracy Vergleich (%)", fontsize=14, fontweight="bold")
@@ -277,9 +322,9 @@ for i, v in enumerate(f1s):
 plt.tight_layout()
 plt.savefig(f"{output_dir}/accuracy_f1_vergleich.png", dpi=150, bbox_inches="tight")
 plt.close()
-print(f"\n📊 Plot gespeichert: {output_dir}/accuracy_f1_vergleich.png")
+print(f"\n📊 Plot: {output_dir}/accuracy_f1_vergleich.png")
 
-# Plot 2: Inferenzzeit Vergleich
+# Plot 2: Inferenzzeit
 fig, ax = plt.subplots(figsize=(10, 5))
 inf_times = [results[n]["inference_ms"] for n in names]
 bars = ax.bar(names, inf_times, color=colors, edgecolor="white")
@@ -291,7 +336,7 @@ for bar, v in zip(bars, inf_times):
 plt.tight_layout()
 plt.savefig(f"{output_dir}/inferenzzeit_vergleich.png", dpi=150, bbox_inches="tight")
 plt.close()
-print(f"📊 Plot gespeichert: {output_dir}/inferenzzeit_vergleich.png")
+print(f"📊 Plot: {output_dir}/inferenzzeit_vergleich.png")
 
 # Plot 3: Confusion Matrices
 n_models = len(results)
@@ -307,43 +352,23 @@ for ax, (name, r) in zip(axes, results.items()):
 plt.tight_layout()
 plt.savefig(f"{output_dir}/confusion_matrices.png", dpi=150, bbox_inches="tight")
 plt.close()
-print(f"📊 Plot gespeichert: {output_dir}/confusion_matrices.png")
+print(f"📊 Plot: {output_dir}/confusion_matrices.png")
 
-# Plot 4: Neuronales Netz Lernkurve (falls vorhanden)
-if "Neuronales Netz" in results and "history" in results["Neuronales Netz"]:
-    history = results["Neuronales Netz"]["history"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(history.history["accuracy"],     label="Train Accuracy", linewidth=2)
-    ax.plot(history.history["val_accuracy"], label="Val Accuracy",   linewidth=2, linestyle="--")
-    ax.set_title("Neuronales Netz - Lernkurve", fontsize=13, fontweight="bold")
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Accuracy")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(f"{output_dir}/lernkurve_nn.png", dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"📊 Plot gespeichert: {output_dir}/lernkurve_nn.png")
-
-# ──────────────────────────────────────────────
-# 8. CSV ERGEBNIS-TABELLE SPEICHERN
-# ──────────────────────────────────────────────
-
+# CSV Ergebnisse speichern
 results_df = pd.DataFrame([
     {
-        "Modell":          name,
-        "Accuracy (%)":    r["accuracy"],
-        "F1-Score (%)":    r["f1_score"],
-        "CV-Score (%)":    r["cv_mean"],
-        "CV-Std (%)":      r["cv_std"],
+        "Modell":            name,
+        "Accuracy (%)":      r["accuracy"],
+        "F1-Score (%)":      r["f1_score"],
+        "CV-Score (%)":      r["cv_mean"],
+        "CV-Std (%)":        r["cv_std"],
         "Trainingszeit (s)": r["train_time_s"],
         "Inferenzzeit (ms)": r["inference_ms"],
     }
     for name, r in results.items()
 ])
-
 results_df.to_csv(f"{output_dir}/ergebnisse.csv", index=False)
-print(f"📁 Ergebnisse gespeichert: {output_dir}/ergebnisse.csv")
+print(f"📁 Ergebnisse: {output_dir}/ergebnisse.csv")
 
 print("\n" + "=" * 50)
 print("  ✅ Training abgeschlossen!")
