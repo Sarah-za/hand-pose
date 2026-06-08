@@ -26,21 +26,20 @@ KLASSEN = {
 }
 
 # ============================================================
-# SESSIONS — 11 Variationen (alle Probanden machen alle Sessions)
+# SESSIONS — 10 Variationen (alle Probanden machen alle Sessions)
 # Format: (Name, licht, abstand, hand)
 # ============================================================
 SESSIONS = {
-    "1":  ("Basis",                 "normales_licht",   "40-60cm",  "rechts"),
-    "2":  ("Licht: Hell",           "helles_licht",     "40-60cm",  "rechts"),
-    "3":  ("Licht: Schwach",        "schwaches_licht",  "40-60cm",  "rechts"),
-    "4":  ("Licht: Seitlich",       "seitlich",         "40-60cm",  "rechts"),
-    "5":  ("Abstand: Nah",          "normales_licht",   "20-30cm",  "rechts"),
-    "6":  ("Abstand: Weit",         "normales_licht",   "70-100cm", "rechts"),
-    "7":  ("Rotation: Handflaeche", "normales_licht",   "40-60cm",  "rechts"),
-    "8":  ("Rotation: Handruecken", "normales_licht",   "40-60cm",  "rechts"),
-    "9":  ("Hintergrund: Hell",     "normales_licht",   "40-60cm",  "rechts"),
-    "10": ("Hintergrund: Dunkel",   "normales_licht",   "40-60cm",  "rechts"),
-    "11": ("Linke Hand",            "normales_licht",   "40-60cm",  "links"),
+    "1":  ("Basis",                 "normales_licht",   "40 cm",  "rechts"),
+    "2":  ("Licht: Hell",           "helles_licht",     "40 cm",  "rechts"),
+    "3":  ("Licht: Schwach",        "schwaches_licht",  "40 cm",  "rechts"),
+    "4":  ("Licht: Seitlich",       "seitlich",         "40 cm",  "rechts"),
+    "5":  ("Abstand: Nah",          "normales_licht",   "25 cm",  "rechts"),
+    "6":  ("Abstand: Weit",         "normales_licht",   "60 cm", "rechts"),
+    "7":  ("Rotation: Handflaeche", "normales_licht",   "40 cm",  "rechts"),
+    "8":  ("Hintergrund: Hell",     "normales_licht",   "40 cm",  "rechts"),
+    "9":  ("Hintergrund: Dunkel",   "normales_licht",   "40 cm",  "rechts"),
+    "10": ("Linke Hand",            "normales_licht",   "40cm",  "links"),
 }
 
 # ============================================================
@@ -105,14 +104,14 @@ def main():
     if not proband:
         proband = "unbekannt"
 
-    # Sessions anzeigen — alle machen alle 11 Sessions
+    # Sessions anzeigen — alle machen alle 10 Sessions
     print(f"\nVerfuegbare Sessions fuer '{proband}':")
     print(f"{'Nr.':<5} {'Name':<25} {'Licht':<18} {'Abstand':<12} {'Hand'}")
     print("-"*75)
     for sid, (name, licht, abstand, hand) in SESSIONS.items():
         print(f"[{sid:>2}]  {name:<25} {licht:<18} {abstand:<12} {hand}")
 
-    print(f"\nHinweis: Alle Probanden machen alle 11 Sessions.")
+    print(f"\nHinweis: Alle Probanden machen alle 10 Sessions.")
     statisch  = sum(1 for k in KLASSEN.values() if k["frames"] == 50)  * 50
     dynamisch = sum(1 for k in KLASSEN.values() if k["frames"] == 100) * 100
     gesamt    = statisch + dynamisch
