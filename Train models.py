@@ -19,8 +19,13 @@ from torch.utils.data import DataLoader, TensorDataset
 
 DATENSATZ_ORDNER = "datensatz"   # Ordner mit allen rohen CSV-Dateien
 MODEL_ORDNER     = "modelle"     # Ordner zum Speichern der Modelle
-TEST_SIZE    = 0.2                               # 20% der Daten für den Test
-RANDOM_STATE = 42                                # Fixierter Zufallswert → reproduzierbare Ergebnisse
+TEST_SIZE    = 0.2               # 20% der Daten für den Test
+RANDOM_STATE = 42                # Fixierter Zufallswert → reproduzierbare Ergebnisse
+VAL_SIZE = 0.2                   # 20% der verbleibenden Daten als Validierungsdaten
+# Zufallsseeds fixieren -> bei jedem Lauf identische Ergebnisse
+np.random.seed(RANDOM_STATE)          # NumPy (wird von scikit-learn genutzt)
+torch.manual_seed(RANDOM_STATE)       # PyTorch CPU: Gewichte, Dropout, Shuffling
+torch.cuda.manual_seed_all(RANDOM_STATE)  # dasselbe fuer Berechnungen auf der GPU
 
 # Namen der 6 Gestenklassen (0–5)
 KLASSEN_NAMEN = {
@@ -92,34 +97,44 @@ def lade_daten():
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. DATEN VORBEREITEN
-#    a) StandardScaler: Normalisiert alle Features auf Mittelwert=0, Std=1.
-#       Wichtig für SVM und KNN, da diese auf Abstände basieren und
-#       sonst Features mit großen Werten dominieren würden.
-#    b) LabelEncoder: Wandelt Klassennamen ("faust") in Zahlen (1) um,
-#       da ML-Modelle nur mit Zahlen arbeiten können.
-#    c) Train/Test-Split: 80% der Daten zum Training, 20% zum Testen.
-#       stratify=y stellt sicher, dass alle Klassen gleich verteilt sind.
+#    a) LabelEncoder: Wandelt Klassenlabels in Zahlen um.
+#    b) Dreifach-Split: Training / Validierung / Test.
+#       - Test: nur für die abschließende Evaluation, fließt nicht ins Training
+#       - Val:  nur beim neuronalen Netz für Early Stopping
+#    c) StandardScaler: wird AUSSCHLIESSLICH auf den Trainingsdaten angepasst.
+#       Val und Test werden mit denselben Parametern nur transformiert,
+#       damit keine Information aus diesen Teilmengen in die Normierung einfließt.
 # ──────────────────────────────────────────────────────────────────────────────
 
 X, y = lade_daten()
-
-# Normalisierung
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
 # Labels zu Zahlen
 le = LabelEncoder()
 y_enc = le.fit_transform(y)
 num_classes = len(np.unique(y_enc))
 
-# Train/Test Split
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y_enc,
+# Split 1: Testdaten abtrennen
+X_temp, X_test_raw, y_temp, y_test = train_test_split(
+    X, y_enc,
     test_size=TEST_SIZE,
     random_state=RANDOM_STATE,
-    stratify=y_enc          # gleiche Klassenverteilung in Train und Test
+    stratify=y_enc
 )
-print(f"\nTrain: {len(X_train)} Samples | Test: {len(X_test)} Samples")
+
+# Split 2: Validierungsdaten abtrennen
+X_train_raw, X_val_raw, y_train, y_val = train_test_split(
+    X_temp, y_temp,
+    test_size=VAL_SIZE,
+    random_state=RANDOM_STATE,
+    stratify=y_temp
+)
+
+# Normierung: fit nur auf Training
+scaler  = StandardScaler()
+X_train = scaler.fit_transform(X_train_raw)
+X_val   = scaler.transform(X_val_raw)
+X_test  = scaler.transform(X_test_raw)
+
+print(f"\nTrain: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. RANDOM FOREST TRAINING
@@ -226,7 +241,7 @@ class_weights = torch.tensor(weights, dtype=torch.float32).to(device)
 # Daten in PyTorch-Tensoren umwandeln und auf GPU/CPU laden
 X_train_t = torch.tensor(X_train, dtype=torch.float32).to(device)
 y_train_t = torch.tensor(y_train, dtype=torch.long).to(device)
-X_test_t  = torch.tensor(X_test,  dtype=torch.float32).to(device)
+X_val_t   = torch.tensor(X_val,   dtype=torch.float32).to(device)
 
 # DataLoader: teilt Daten in Mini-Batches auf (je 32 Samples pro Schritt)
 dataset = TensorDataset(X_train_t, y_train_t)
@@ -245,6 +260,7 @@ os.makedirs(MODEL_ORDNER, exist_ok=True)
 EPOCHS     = 100
 patience   = 10
 best_acc   = 0.0
+best_epoch = 0
 no_improve = 0
 
 from sklearn.metrics import accuracy_score as sk_acc
@@ -263,14 +279,15 @@ for epoch in range(EPOCHS):
     # Validierung nach jeder Epoche
     nn_model.eval()
     with torch.no_grad():
-        val_out  = nn_model(X_test_t)
+        val_out  = nn_model(X_val_t)
         val_pred = torch.argmax(val_out, dim=1).cpu().numpy()
-        val_acc  = sk_acc(y_test, val_pred)
+        val_acc  = sk_acc(y_val, val_pred)
 
     # Bestes Modell speichern
     if val_acc > best_acc:
         best_acc   = val_acc
         no_improve = 0
+        best_epoch = epoch + 1
         torch.save(nn_model.state_dict(), f"{MODEL_ORDNER}/best_nn_model.pt")
     else:
         no_improve += 1
@@ -285,7 +302,7 @@ for epoch in range(EPOCHS):
 
 # Bestes Modell laden für spätere Nutzung
 nn_model.load_state_dict(torch.load(f"{MODEL_ORDNER}/best_nn_model.pt"))
-print("Training abgeschlossen")
+print(f"Training abgeschlossen (bestes Modell aus Epoch {best_epoch})")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 8. MODELLE SPEICHERN
@@ -305,9 +322,12 @@ joblib.dump(knn,    f"{MODEL_ORDNER}/knn.pkl")
 joblib.dump(scaler, f"{MODEL_ORDNER}/scaler.pkl")
 joblib.dump(le,     f"{MODEL_ORDNER}/label_encoder.pkl")
 
-# Testdaten speichern → werden in evaluation.py verwendet
+
+# Test- und Validierungsdaten speichern → werden in evaluation.py verwendet
 np.save(f"{MODEL_ORDNER}/X_test.npy", X_test)
 np.save(f"{MODEL_ORDNER}/y_test.npy", y_test)
+np.save(f"{MODEL_ORDNER}/X_val.npy",  X_val)
+np.save(f"{MODEL_ORDNER}/y_val.npy",  y_val)
 
 print("\n" + "=" * 50)
 print("  Training abgeschlossen!")
