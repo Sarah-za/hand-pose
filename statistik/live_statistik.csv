@@ -1,0 +1,88 @@
+modell,ziel_geste,frames,richtige_frames,einzelframe_accuracy,mehrheitsklasse,mehrheit_richtig,gemessene_fps,dauer_sekunden,testdaten_accuracy
+Random Forest,hand_offen,50,45,90.0,hand_offen,1,9.9,5.0,94.32
+Random Forest,hand_offen,50,50,100.0,hand_offen,1,9.9,5.0,94.32
+Random Forest,hand_offen,50,50,100.0,hand_offen,1,9.9,5.0,94.32
+Random Forest,faust,50,50,100.0,faust,1,9.9,5.0,94.32
+Random Forest,faust,50,50,100.0,faust,1,9.9,5.0,94.32
+Random Forest,faust,50,50,100.0,faust,1,9.9,5.0,94.32
+Random Forest,daumen_hoch,50,50,100.0,daumen_hoch,1,9.9,5.0,94.32
+Random Forest,daumen_hoch,50,50,100.0,daumen_hoch,1,9.9,5.0,94.32
+Random Forest,daumen_hoch,50,50,100.0,daumen_hoch,1,9.9,5.0,94.32
+Random Forest,zeigefinger,50,50,100.0,zeigefinger,1,9.9,5.0,94.32
+Random Forest,zeigefinger,50,50,100.0,zeigefinger,1,9.9,5.0,94.32
+Random Forest,zeigefinger,50,48,96.0,zeigefinger,1,9.9,5.0,94.32
+Random Forest,winken,100,92,92.0,winken,1,10.0,10.0,94.32
+Random Forest,winken,100,92,92.0,winken,1,10.0,10.0,94.32
+Random Forest,winken,100,93,93.0,winken,1,10.0,10.0,94.32
+Random Forest,kreisbewegung,100,92,92.0,kreisbewegung,1,10.0,10.0,94.32
+Random Forest,kreisbewegung,100,85,85.0,kreisbewegung,1,10.0,10.0,94.32
+Random Forest,kreisbewegung,100,92,92.0,kreisbewegung,1,10.0,10.0,94.32
+SVM,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,88.56
+SVM,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,88.56
+SVM,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,88.56
+SVM,faust,50,50,100.0,faust,1,10.0,5.0,88.56
+SVM,faust,50,50,100.0,faust,1,10.0,5.0,88.56
+SVM,faust,50,50,100.0,faust,1,10.0,5.0,88.56
+SVM,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.56
+SVM,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.56
+SVM,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.56
+SVM,zeigefinger,50,50,100.0,zeigefinger,1,10.0,5.0,88.56
+SVM,zeigefinger,50,49,98.0,zeigefinger,1,10.0,5.0,88.56
+SVM,zeigefinger,50,48,96.0,zeigefinger,1,10.0,5.0,88.56
+SVM,winken,100,88,88.0,winken,1,10.0,10.0,88.56
+SVM,winken,100,91,91.0,winken,1,10.0,10.0,88.56
+SVM,winken,100,86,86.0,winken,1,10.0,10.0,88.56
+SVM,kreisbewegung,100,67,67.0,kreisbewegung,1,10.0,10.0,88.56
+SVM,kreisbewegung,100,69,69.0,kreisbewegung,1,10.0,10.0,88.56
+SVM,kreisbewegung,100,72,72.0,kreisbewegung,1,10.0,10.0,88.56
+KNN,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,92.7
+KNN,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,92.7
+KNN,hand_offen,50,48,96.0,hand_offen,1,10.0,5.0,92.7
+KNN,faust,50,50,100.0,faust,1,10.0,5.0,92.7
+KNN,faust,50,50,100.0,faust,1,10.0,5.0,92.7
+KNN,faust,50,50,100.0,faust,1,10.0,5.0,92.7
+KNN,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,92.7
+KNN,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,92.7
+KNN,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,92.7
+KNN,zeigefinger,50,49,98.0,zeigefinger,1,10.0,5.0,92.7
+KNN,zeigefinger,50,50,100.0,zeigefinger,1,10.0,5.0,92.7
+KNN,zeigefinger,50,48,96.0,zeigefinger,1,10.0,5.0,92.7
+KNN,winken,100,85,85.0,winken,1,10.0,10.0,92.7
+KNN,winken,100,85,85.0,winken,1,10.0,10.0,92.7
+KNN,winken,100,87,87.0,winken,1,10.0,10.0,92.7
+KNN,kreisbewegung,100,78,78.0,kreisbewegung,1,10.0,10.0,92.7
+KNN,kreisbewegung,100,80,80.0,kreisbewegung,1,10.0,10.0,92.7
+KNN,kreisbewegung,100,70,70.0,kreisbewegung,1,9.8,10.2,92.7
+Neuronales Netz,hand_offen,50,45,90.0,hand_offen,1,10.0,5.0,88.73
+Neuronales Netz,hand_offen,50,48,96.0,hand_offen,1,10.0,5.0,88.73
+Neuronales Netz,hand_offen,50,45,90.0,hand_offen,1,10.0,5.0,88.73
+Neuronales Netz,faust,50,50,100.0,faust,1,10.0,5.0,88.73
+Neuronales Netz,faust,50,50,100.0,faust,1,10.0,5.0,88.73
+Neuronales Netz,faust,50,50,100.0,faust,1,10.0,5.0,88.73
+Neuronales Netz,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.73
+Neuronales Netz,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.73
+Neuronales Netz,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.73
+Neuronales Netz,zeigefinger,50,48,96.0,zeigefinger,1,10.0,5.0,88.73
+Neuronales Netz,zeigefinger,50,50,100.0,zeigefinger,1,10.0,5.0,88.73
+Neuronales Netz,zeigefinger,50,50,100.0,zeigefinger,1,10.0,5.0,88.73
+Neuronales Netz,winken,100,85,85.0,winken,1,10.0,10.0,88.73
+Neuronales Netz,winken,100,94,94.0,winken,1,10.0,10.0,88.73
+Neuronales Netz,winken,100,85,85.0,winken,1,10.0,10.0,88.73
+Neuronales Netz,kreisbewegung,100,75,75.0,kreisbewegung,1,10.0,10.0,88.73
+Neuronales Netz,kreisbewegung,100,54,54.0,kreisbewegung,1,10.0,10.0,88.73
+Neuronales Netz,kreisbewegung,100,69,69.0,kreisbewegung,1,9.9,10.1,88.73
+
+Random Forest,hand_offen,50,25,50.0,kreisbewegung,0,10.0,5.0,94.32
+Random Forest,hand_offen,50,12,24.0,winken,0,9.9,5.0,94.32
+Random Forest,hand_offen,50,48,96.0,hand_offen,1,9.9,5.0,94.32
+Random Forest,faust,50,50,100.0,faust,1,9.9,5.0,94.32
+Random Forest,daumen_hoch,50,50,100.0,daumen_hoch,1,9.9,5.0,94.32
+Random Forest,zeigefinger,50,50,100.0,zeigefinger,1,9.9,5.0,94.32
+Random Forest,winken,100,73,73.0,winken,1,10.0,10.0,94.32
+Random Forest,kreisbewegung,100,100,100.0,kreisbewegung,1,10.0,10.0,94.32
+Neuronales Netz,hand_offen,50,50,100.0,hand_offen,1,10.0,5.0,88.73
+Neuronales Netz,faust,50,43,86.0,faust,1,10.0,5.0,88.73
+Neuronales Netz,daumen_hoch,50,50,100.0,daumen_hoch,1,10.0,5.0,88.73
+Neuronales Netz,zeigefinger,50,25,50.0,zeigefinger,1,10.0,5.0,88.73
+Neuronales Netz,winken,100,83,83.0,winken,1,10.0,10.0,88.73
+Neuronales Netz,kreisbewegung,100,69,69.0,kreisbewegung,1,10.0,10.0,88.73
