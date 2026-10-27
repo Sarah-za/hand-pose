@@ -36,10 +36,6 @@ class HandGestenNN(nn.Module):
     def forward(self, x):
         return self.netz(x)
 
-    def forward(self, x):
-        return self.netz(x)
-
-
 def lade_testdaten():
     X_test = np.load(f"{MODEL_ORDNER}/X_test.npy")
     y_test = np.load(f"{MODEL_ORDNER}/y_test.npy")
